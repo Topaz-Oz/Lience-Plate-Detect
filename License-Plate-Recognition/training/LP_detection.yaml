@@ -1,0 +1,7 @@
+path: ../images  # Dataset root directory
+train: train  # Train images 
+val: val  # Validation images
+
+# Classes
+nc: 1  # Number of classes (chỉ detect vùng biển số)
+names: ['license_plate']  # Class names
