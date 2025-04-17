@@ -1,0 +1,50 @@
+git push origin main
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Training artifacts
+runs/
+*.pt
+ultralytics/
+
+# Dataset
+images/
+labels/
+*.cache
+
+# Logs
+*.log
+
+# Environment
+.env
+venv/
+env/
+config.json
+api_keys.txt
+
+# IDE
+.vscode/
+.idea/
+
+yolov5/
+test_image/
+check_cache/
+/draw_image.py
+/test.py
+/res.jpg
+cache.jpg
+cache_ch.jpg
+edge.jpg
+line.jpg
+crop.jpg
+# Thêm các file chứa API Key vào .gitignore
