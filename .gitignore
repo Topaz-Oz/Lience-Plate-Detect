@@ -130,3 +130,5 @@ temp/
 .cache/
 FEFolder/package.json
 FEFolder/package-lock.json
+node_modules/
+
