@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 import logging
 import torch
+from function.helper import PlateLocation  # Corrected import path
 
 # Thiết lập logging
 logging.basicConfig(
@@ -52,7 +53,7 @@ class LicensePlateDetector:
 
             if len(results) == 0 or len(results[0].boxes) == 0:
                 logging.warning("No license plate detected")
-                return None, None
+                return None, None, None
 
             # Lấy box có confidence cao nhất
             boxes = results[0].boxes
@@ -73,7 +74,7 @@ class LicensePlateDetector:
 
             if len(char_results) == 0 or len(char_results[0].boxes) == 0:
                 logging.warning("No characters detected")
-                return plate_region, ""
+                return plate_region, "", None
 
             # Xử lý kết quả nhận dạng ký tự
             boxes = char_results[0].boxes
@@ -91,12 +92,15 @@ class LicensePlateDetector:
             names = self.recognizer.names
             plate_number = ''.join([names[c[1]] for c in chars])
 
-            logging.info(f"Detected plate number: {plate_number}")
-            return plate_region, plate_number
+            # Phân tích thông tin biển số
+            plate_info = PlateLocation.parse_plate_info(plate_number)
+
+            logging.info(f"Detected plate: {plate_number}, Province: {plate_info['province']}, Type: {plate_info['type']}")
+            return plate_region, plate_number, plate_info
 
         except Exception as e:
             logging.error(f"Error in detection: {str(e)}")
-            return None, None
+            return None, None, None
 
     def process_video(self, video_path):
         try:
@@ -109,11 +113,15 @@ class LicensePlateDetector:
                 if not ret:
                     break
 
-                plate_img, plate_number = self.detect_license_plate(frame)
+                plate_img, plate_number, plate_info = self.detect_license_plate(frame)
                 
-                if plate_number:
+                if plate_number and plate_info:
                     # Vẽ kết quả lên frame
-                    cv2.putText(frame, plate_number, (10, 30), 
+                    text = f"{plate_number} - {plate_info['province']}"
+                    if plate_info['type']:
+                        text += f" ({plate_info['type']})"
+                    
+                    cv2.putText(frame, text, (10, 30), 
                               cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 
                 cv2.imshow('License Plate Detection', frame)
@@ -133,10 +141,14 @@ if __name__ == "__main__":
     
     # Test với ảnh
     image_path = "test_image/bien_so.jpg"
-    plate_img, plate_number = detector.detect_license_plate(image_path)
+    plate_img, plate_number, plate_info = detector.detect_license_plate(image_path)
     
     if plate_img is not None and plate_number:
-        print(f"Detected plate number: {plate_number}")
+        print(f"Detected plate: {plate_number}")
+        if plate_info:
+            print(f"Province: {plate_info['province']}")
+            print(f"Vehicle type: {plate_info['type']}")
+        
         cv2.imshow("Plate", plate_img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()

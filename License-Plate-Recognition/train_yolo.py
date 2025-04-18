@@ -7,8 +7,8 @@ model = YOLO('yolov8n.pt')  # load pretrained model
 
 # Configure training
 results = model.train(
-    data='datasets/license_plate_ocr/dataset.yaml',
-    epochs=10,
+    data='training/LP_detection.yaml',  # Path to dataset config
+    epochs=10,  # Set epochs to 10
     imgsz=640,
     batch=8,  # Reduced batch size for CPU
     device='cpu',  # Force CPU usage
@@ -41,7 +41,8 @@ results = model.train(
     # Save and validation
     save_period=10,  # Save checkpoint every 10 epochs
     cache=True,  # Cache images for faster training
-    workers=1  # Reduced number of workers for CPU
+    workers=1,  # Reduced number of workers for CPU
+    exist_ok=True  # Allow overwriting existing training
 )
 
 # Validate model

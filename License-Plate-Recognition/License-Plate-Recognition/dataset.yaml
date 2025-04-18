@@ -1,0 +1,8 @@
+path: images  # Dataset root directory
+train: train  # Train images
+val: val    # Validation images
+test: test  # Test images (optional)
+
+# Classes for license plate detection
+nc: 1  # Number of classes
+names: ['license_plate']  # Class names

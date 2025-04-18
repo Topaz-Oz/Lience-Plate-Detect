@@ -11,7 +11,7 @@ def convert_dataset_labels(base_path):
     if not backup_dir.exists():
         shutil.copytree(labels_dir, backup_dir)
         print(f"Created backup of labels in {backup_dir}")
-    
+        
     # Process train and val folders
     for split in ['train', 'val']:
         split_dir = labels_dir / split

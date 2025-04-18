@@ -1,0 +1,54 @@
+Python is running
+PyTorch version: 2.6.0+cpu
+OpenCV version: 4.11.0
+CUDA available: False
+
+Testing image loading from: test_image/101.jpg
+Successfully loaded image with shape: (1280, 960, 3)
+Saved original image to result/original.jpg
+
+Testing model loading...
+Error during testing: ERROR  model/LP_detector_nano_61.pt appears to be an Ultralytics YOLOv5 model originally trained with https://github.com/ultralytics/yolov5.
+This model is NOT forwards compatible with YOLOv8 at https://github.com/ultralytics/ultralytics.
+Recommend fixes are to train a new model using the latest 'ultralytics' package or to run a command with an official Ultralytics model, i.e. 'yolo predict model=yolo11n.pt'
+Traceback:
+Traceback (most recent call last):
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\nn\tasks.py", line 1209, in torch_safe_load
+    ckpt = torch.load(file, map_location="cpu")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\utils\patches.py", line 107, in torch_load
+    return _torch_load(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\torch\serialization.py", line 1471, in load
+    return _load(
+           ^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\torch\serialization.py", line 1964, in _load
+    result = unpickler.load()
+             ^^^^^^^^^^^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\torch\serialization.py", line 1953, in find_class
+    return super().find_class(mod_name, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'models'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\toant\source\repos\ITSFolder\License-Plate-Recognition\test_detector.py", line 34, in <module>
+    detector = YOLO('model/LP_detector_nano_61.pt')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\models\yolo\model.py", line 54, in __init__
+    super().__init__(model=model, task=task, verbose=verbose)
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\engine\model.py", line 148, in __init__
+    self._load(model, task=task)
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\engine\model.py", line 290, in _load
+    self.model, self.ckpt = attempt_load_one_weight(weights)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\nn\tasks.py", line 1304, in attempt_load_one_weight
+    ckpt, weight = torch_safe_load(weight)  # load ckpt
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\toant\anaconda3\Lib\site-packages\ultralytics\nn\tasks.py", line 1213, in torch_safe_load
+    raise TypeError(
+TypeError: ERROR  model/LP_detector_nano_61.pt appears to be an Ultralytics YOLOv5 model originally trained with https://github.com/ultralytics/yolov5.
+This model is NOT forwards compatible with YOLOv8 at https://github.com/ultralytics/ultralytics.
+Recommend fixes are to train a new model using the latest 'ultralytics' package or to run a command with an official Ultralytics model, i.e. 'yolo predict model=yolo11n.pt'
+

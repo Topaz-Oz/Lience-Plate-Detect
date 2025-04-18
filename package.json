@@ -1,0 +1,25 @@
+{
+  "name": "itsfolder",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Topaz-Oz/Lience-Plate-Detect.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Topaz-Oz/Lience-Plate-Detect/issues"
+  },
+  "homepage": "https://github.com/Topaz-Oz/Lience-Plate-Detect#readme",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.8.4",
+    "form-data": "^4.0.2",
+    "multer": "^1.4.5-lts.2"
+  }
+}

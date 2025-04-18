@@ -36,7 +36,7 @@ api_keys.txt
 .vscode/
 .idea/
 
-yolov5/
+yolov8/
 test_image/
 check_cache/
 /draw_image.py
