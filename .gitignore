@@ -131,4 +131,7 @@ temp/
 FEFolder/package.json
 FEFolder/package-lock.json
 node_modules/
+[submodule "FEFolder"]
+    path = FEFolder
+    url = <url-of-submodule>
 
