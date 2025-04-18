@@ -8,7 +8,7 @@ model = YOLO('yolov8n.pt')  # load pretrained model
 # Configure training
 results = model.train(
     data='datasets/license_plate_ocr/dataset.yaml',
-    epochs=100,
+    epochs=10,
     imgsz=640,
     batch=8,  # Reduced batch size for CPU
     device='cpu',  # Force CPU usage

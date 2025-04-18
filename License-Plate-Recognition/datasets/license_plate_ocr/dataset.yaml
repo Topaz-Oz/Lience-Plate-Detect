@@ -1,4 +1,4 @@
-path: ../images  # Dataset root directory
+path: C:/Users/toant/source/repos/ITSFolder/License-Plate-Recognition/images  # Dataset root directory with absolute path
 train: train  # Train images (3433 images)
 val: val      # Validation images (1145 images)
 

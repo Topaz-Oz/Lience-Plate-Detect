@@ -1,140 +1,142 @@
 from ultralytics import YOLO
 import cv2
-import torch
-import function.utils_rotate as utils_rotate
-import function.helper as helper
 import numpy as np
+from pathlib import Path
 import logging
-import os
+import torch
 
-# Configure logging
+# Thiết lập logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-def process_image(image_path, lp_detector, char_detector, conf_threshold=0.5):
-    logging.info(f"Processing image: {image_path}")
-    # Read image
-    img = cv2.imread(image_path)
-    if img is None:
-        raise ValueError(f"Could not read image: {image_path}")
-    
-    logging.info("Detecting license plates...")
-    # YOLOv8 detection
-    results = lp_detector(img, conf=conf_threshold)
-    if len(results) == 0:
-        logging.info("No license plates detected")
-        return img, []
-        
-    list_plates = []
-    # Process detection results
-    for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            # Get box coordinates and confidence
-            b = box.xyxy[0].tolist()
-            conf = float(box.conf)
-            list_plates.append([b[0], b[1], b[2], b[3], conf])
-            logging.info(f"Found license plate with confidence: {conf:.2f}")
-    
-    # Process each detected plate
-    detected_plates = []
-    for plate in list_plates:
-        x = max(0, int(plate[0]))
-        y = max(0, int(plate[1]))
-        w = min(int(plate[2] - plate[0]), img.shape[1] - x)
-        h = min(int(plate[3] - plate[1]), img.shape[0] - y)
-        
-        if w <= 0 or h <= 0:
-            continue
-            
+class LicensePlateDetector:
+    def __init__(self):
+        self.device = 'cpu'
+        # Load models
         try:
-            # Crop and process license plate
-            crop_img = img[y:y+h, x:x+w]
-            cv2.rectangle(img, (x, y), (x+w, y+h), color=(0, 0, 255), thickness=2)
-            
-            # Try different rotations for better recognition
-            plate_text = "unknown"
-            for cc in range(0, 2):
-                for ct in range(0, 2):
-                    rotated = utils_rotate.deskew(crop_img, cc, ct)
-                    if rotated is None:
-                        continue
-                        
-                    text = helper.read_plate(char_detector, rotated)
-                    if text != "unknown":
-                        plate_text = text
-                        logging.info(f"Detected plate number: {text}")
-                        # Draw text with background
-                        text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)[0]
-                        cv2.rectangle(img, 
-                                    (x, y-text_size[1]-10), 
-                                    (x+text_size[0], y), 
-                                    (0, 0, 0), 
-                                    -1)
-                        cv2.putText(img, text, (x, y-10), 
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.9, (36, 255, 12), 2)
-                        detected_plates.append(text)
-                        break
-                if plate_text != "unknown":
-                    break
+            # Sử dụng model YOLOv8 mới thay vì model YOLOv5 cũ
+            self.detector = YOLO('runs/train/LP_detector_v8_cpu/weights/best.pt')
+            self.recognizer = YOLO('runs/train/LP_ocr_v8/weights/best.pt')
+            logging.info("Models loaded successfully")
         except Exception as e:
-            logging.error(f"Error processing plate: {str(e)}")
-            continue
+            logging.error(f"Error loading models: {str(e)}")
+            # Nếu không tìm thấy model đã train, sử dụng model base
+            try:
+                self.detector = YOLO('yolov8n.pt')
+                self.recognizer = YOLO('yolov8n.pt')
+                logging.info("Using base YOLOv8n models")
+            except Exception as e:
+                logging.error(f"Error loading base models: {str(e)}")
+                raise
+
+    def detect_license_plate(self, image_path):
+        try:
+            # Đọc ảnh
+            if isinstance(image_path, str):
+                img = cv2.imread(image_path)
+            else:
+                img = image_path
+            
+            if img is None:
+                raise ValueError("Could not read image")
+
+            # Detect biển số xe
+            results = self.detector.predict(
+                source=img,
+                conf=0.25,
+                iou=0.45,
+                device=self.device
+            )
+
+            if len(results) == 0 or len(results[0].boxes) == 0:
+                logging.warning("No license plate detected")
+                return None, None
+
+            # Lấy box có confidence cao nhất
+            boxes = results[0].boxes
+            best_box = boxes[0]
+            x1, y1, x2, y2 = map(int, best_box.xyxy[0])
+
+            # Cắt vùng biển số
+            plate_region = img[y1:y2, x1:x2]
+            
+            # Nhận dạng ký tự
+            char_results = self.recognizer.predict(
+                source=plate_region,
+                conf=0.25,
+                iou=0.45,
+                max_det=20,
+                device=self.device
+            )
+
+            if len(char_results) == 0 or len(char_results[0].boxes) == 0:
+                logging.warning("No characters detected")
+                return plate_region, ""
+
+            # Xử lý kết quả nhận dạng ký tự
+            boxes = char_results[0].boxes
+            chars = []
+            for i in range(len(boxes)):
+                cls = int(boxes.cls[i].item())
+                conf = float(boxes.conf[i].item())
+                x1 = float(boxes.xyxy[i][0].item())
+                chars.append((x1, cls, conf))
+
+            # Sắp xếp ký tự từ trái sang phải
+            chars.sort(key=lambda x: x[0])
+            
+            # Lấy tên class từ model
+            names = self.recognizer.names
+            plate_number = ''.join([names[c[1]] for c in chars])
+
+            logging.info(f"Detected plate number: {plate_number}")
+            return plate_region, plate_number
+
+        except Exception as e:
+            logging.error(f"Error in detection: {str(e)}")
+            return None, None
+
+    def process_video(self, video_path):
+        try:
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                raise ValueError("Could not open video file")
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                plate_img, plate_number = self.detect_license_plate(frame)
                 
-    return img, detected_plates
+                if plate_number:
+                    # Vẽ kết quả lên frame
+                    cv2.putText(frame, plate_number, (10, 30), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
+                cv2.imshow('License Plate Detection', frame)
+                
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+            cap.release()
+            cv2.destroyAllWindows()
+
+        except Exception as e:
+            logging.error(f"Error processing video: {str(e)}")
 
 if __name__ == "__main__":
-    logging.info("Starting license plate detection...")
-    # Check CUDA availability
-    logging.info(f"Using CUDA: {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        logging.info(f"GPU Device: {torch.cuda.get_device_name()}")
+    # Test detector
+    detector = LicensePlateDetector()
     
-    # Load models
-    try:
-        logging.info("Loading detection model...")
-        lp_detector = YOLO('model/LP_detector_nano_61.pt')  # Using existing model until new one is trained
-        logging.info("Loading OCR model...")
-        char_detector = YOLO('model/LP_ocr_nano_62.pt')  # Using existing model until new one is trained
-    except Exception as e:
-        logging.error(f"Error loading models: {str(e)}")
-        exit(1)
-        
-    # Process test images
-    test_images = [
-        'test_image/1.jpg',
-        'test_image/3.jpg',
-        'test_image/4.jpg',
-        'test_image/bien_so.jpg'
-    ]
+    # Test với ảnh
+    image_path = "test_image/bien_so.jpg"
+    plate_img, plate_number = detector.detect_license_plate(image_path)
     
-    for img_path in test_images:
-        try:
-            logging.info(f"\nProcessing {img_path}")
-            result_img, plates = process_image(img_path, lp_detector, char_detector)
-            
-            if plates:
-                logging.info(f"Detected plates: {', '.join(plates)}")
-            else:
-                logging.info("No plates detected")
-                
-            # Create result directory if it doesn't exist
-            os.makedirs('result', exist_ok=True)
-                
-            # Save result
-            output_path = f"result/{os.path.basename(img_path)}"
-            cv2.imwrite(output_path, result_img)
-            logging.info(f"Result saved to {output_path}")
-            
-            # Display result
-            cv2.imshow('Result', result_img)
-            if cv2.waitKey(0) & 0xFF == ord('q'):
-                break
-            
-        except Exception as e:
-            logging.error(f"Error processing {img_path}: {str(e)}")
-            continue
-            
-    cv2.destroyAllWindows()
+    if plate_img is not None and plate_number:
+        print(f"Detected plate number: {plate_number}")
+        cv2.imshow("Plate", plate_img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
