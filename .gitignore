@@ -128,5 +128,5 @@ ehthumbs.db
 tmp/
 temp/
 .cache/
-
-# Jupyter Notebook checkpoints
+FEFolder/package.json
+FEFolder/package-lock.json
