@@ -4,9 +4,11 @@ import numpy as np
 from pathlib import Path
 import logging
 import torch
-from function.helper import PlateLocation  # Corrected import path
+import json
+import sys
+from function.helper import PlateLocation
 
-# Thiết lập logging
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
@@ -14,27 +16,18 @@ logging.basicConfig(
 
 class LicensePlateDetector:
     def __init__(self):
-        self.device = 'cpu'
-        # Load models
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         try:
-            # Sử dụng model YOLOv8 mới thay vì model YOLOv5 cũ
-            self.detector = YOLO('runs/train/LP_detector_v8_cpu/weights/best.pt')
-            self.recognizer = YOLO('runs/train/LP_ocr_v8/weights/best.pt')
+            self.detector = YOLO('model/LP_detector_nano_61.pt')
+            self.recognizer = YOLO('model/LP_ocr_nano_62.pt')
             logging.info("Models loaded successfully")
         except Exception as e:
             logging.error(f"Error loading models: {str(e)}")
-            # Nếu không tìm thấy model đã train, sử dụng model base
-            try:
-                self.detector = YOLO('yolov8n.pt')
-                self.recognizer = YOLO('yolov8n.pt')
-                logging.info("Using base YOLOv8n models")
-            except Exception as e:
-                logging.error(f"Error loading base models: {str(e)}")
-                raise
+            raise
 
     def detect_license_plate(self, image_path):
         try:
-            # Đọc ảnh
+            # Read image
             if isinstance(image_path, str):
                 img = cv2.imread(image_path)
             else:
@@ -43,112 +36,103 @@ class LicensePlateDetector:
             if img is None:
                 raise ValueError("Could not read image")
 
-            # Detect biển số xe
-            results = self.detector.predict(
+            # Detect license plate
+            detect_results = self.detector.predict(
                 source=img,
                 conf=0.25,
                 iou=0.45,
                 device=self.device
-            )
+            )[0]
 
-            if len(results) == 0 or len(results[0].boxes) == 0:
-                logging.warning("No license plate detected")
+            if len(detect_results.boxes) == 0:
                 return None, None, None
 
-            # Lấy box có confidence cao nhất
-            boxes = results[0].boxes
+            # Get highest confidence box
+            boxes = detect_results.boxes
             best_box = boxes[0]
             x1, y1, x2, y2 = map(int, best_box.xyxy[0])
+            confidence = float(best_box.conf[0])
 
-            # Cắt vùng biển số
+            # Crop license plate region
             plate_region = img[y1:y2, x1:x2]
-            
-            # Nhận dạng ký tự
+
+            # Recognize characters
             char_results = self.recognizer.predict(
                 source=plate_region,
                 conf=0.25,
                 iou=0.45,
                 max_det=20,
                 device=self.device
-            )
+            )[0]
 
-            if len(char_results) == 0 or len(char_results[0].boxes) == 0:
-                logging.warning("No characters detected")
-                return plate_region, "", None
+            if len(char_results.boxes) == 0:
+                return plate_region, None, None
 
-            # Xử lý kết quả nhận dạng ký tự
-            boxes = char_results[0].boxes
+            # Process character recognition results
             chars = []
-            for i in range(len(boxes)):
-                cls = int(boxes.cls[i].item())
-                conf = float(boxes.conf[i].item())
-                x1 = float(boxes.xyxy[i][0].item())
+            for i in range(len(char_results.boxes)):
+                cls = int(char_results.boxes.cls[i].item())
+                conf = float(char_results.boxes.conf[i].item())
+                x1 = float(char_results.boxes.xyxy[i][0].item())
                 chars.append((x1, cls, conf))
 
-            # Sắp xếp ký tự từ trái sang phải
+            # Sort characters left to right
             chars.sort(key=lambda x: x[0])
             
-            # Lấy tên class từ model
+            # Get class names from model
             names = self.recognizer.names
             plate_number = ''.join([names[c[1]] for c in chars])
 
-            # Phân tích thông tin biển số
+            # Parse plate information
             plate_info = PlateLocation.parse_plate_info(plate_number)
 
-            logging.info(f"Detected plate: {plate_number}, Province: {plate_info['province']}, Type: {plate_info['type']}")
-            return plate_region, plate_number, plate_info
+            # Calculate average confidence
+            avg_confidence = (confidence + sum(c[2] for c in chars) / len(chars)) / 2
+
+            # Create detection result
+            result = {
+                'plateNumber': plate_number,
+                'confidence': avg_confidence,
+                'province': plate_info['province'],
+                'vehicleType': plate_info['type'],
+                'bbox': {
+                    'x': x1,
+                    'y': y1,
+                    'width': x2 - x1,
+                    'height': y2 - y1
+                }
+            }
+
+            return plate_region, result
 
         except Exception as e:
             logging.error(f"Error in detection: {str(e)}")
-            return None, None, None
+            return None, None
 
-    def process_video(self, video_path):
-        try:
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                raise ValueError("Could not open video file")
+def main():
+    if len(sys.argv) != 2:
+        print(json.dumps({'error': 'Image path argument required'}))
+        sys.exit(1)
 
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    break
+    image_path = sys.argv[1]
+    if not Path(image_path).exists():
+        print(json.dumps({'error': 'Image file not found'}))
+        sys.exit(1)
 
-                plate_img, plate_number, plate_info = self.detect_license_plate(frame)
-                
-                if plate_number and plate_info:
-                    # Vẽ kết quả lên frame
-                    text = f"{plate_number} - {plate_info['province']}"
-                    if plate_info['type']:
-                        text += f" ({plate_info['type']})"
-                    
-                    cv2.putText(frame, text, (10, 30), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                
-                cv2.imshow('License Plate Detection', frame)
-                
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+    try:
+        detector = LicensePlateDetector()
+        _, result = detector.detect_license_plate(image_path)
+        
+        if result is None:
+            print(json.dumps({'error': 'No license plate detected'}))
+            sys.exit(1)
 
-            cap.release()
-            cv2.destroyAllWindows()
+        print(json.dumps(result))
+        sys.exit(0)
 
-        except Exception as e:
-            logging.error(f"Error processing video: {str(e)}")
+    except Exception as e:
+        print(json.dumps({'error': str(e)}))
+        sys.exit(1)
 
 if __name__ == "__main__":
-    # Test detector
-    detector = LicensePlateDetector()
-    
-    # Test với ảnh
-    image_path = "test_image/bien_so.jpg"
-    plate_img, plate_number, plate_info = detector.detect_license_plate(image_path)
-    
-    if plate_img is not None and plate_number:
-        print(f"Detected plate: {plate_number}")
-        if plate_info:
-            print(f"Province: {plate_info['province']}")
-            print(f"Vehicle type: {plate_info['type']}")
-        
-        cv2.imshow("Plate", plate_img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    main()
