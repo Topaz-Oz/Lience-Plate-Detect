@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Hệ thống nhận diện biển số xe</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+    <script src="js/apiService.js"></script>
+    <script src="js/uiUtils.js"></script>
+    <script src="js/wsClient.js"></script>
+    <style>
+        #webcam-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+        #webcam {
+            width: 100%;
+            height: auto;
+        }
+        .capture-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+        }
+        .detection-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">Hệ thống nhận diện biển số xe</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" id="detection-tab">Nhận diện</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="history-tab">Lịch sử</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="analytics-tab">Thống kê</a>
+                    </li>
+                </ul>
+                <div class="d-flex">
+                    <span class="navbar-text me-3" id="user-info"></span>
+                    <button class="btn btn-outline-light" id="logout-btn">Đăng xuất</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Detection Section -->
+        <div id="detection-section" class="fade-in">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <ul class="nav nav-tabs card-header-tabs">
+                                <li class="nav-item">
+                                    <a class="nav-link active" href="#" data-bs-toggle="tab" data-target="upload-panel">
+                                        <i class="bi bi-upload"></i> Tải ảnh lên
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" href="#" data-bs-toggle="tab" data-target="webcam-panel">
+                                        <i class="bi bi-camera"></i> Camera
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
+                        <div class="card-body">
+                            <!-- Upload Panel -->
+                            <div id="upload-panel">
+                                <form id="upload-form">
+                                    <div class="mb-3">
+                                        <input type="file" class="form-control" id="image-input" accept="image/*">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-search"></i> Nhận diện
+                                    </button>
+                                </form>
+                            </div>
+
+                            <!-- Webcam Panel -->
+                            <div id="webcam-panel" style="display: none;">
+                                <div id="webcam-container">
+                                    <video id="webcam" autoplay playsinline></video>
+                                    <canvas id="detection-overlay" class="detection-overlay"></canvas>
+                                    <button id="capture-btn" class="btn btn-primary capture-btn">
+                                        <i class="bi bi-camera"></i> Chụp ảnh
+                                    </button>
+                                </div>
+                                <div class="form-check mt-3">
+                                    <input class="form-check-input" type="checkbox" id="auto-detect">
+                                    <label class="form-check-label" for="auto-detect">
+                                        Tự động nhận diện
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Kết quả nhận diện</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="result-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Section -->
+        <div id="history-section" class="fade-in" style="display: none;">
+            <div class="card">
+                <div class="card-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h5 class="card-title mb-0">Lịch sử nhận diện</h5>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-outline-primary btn-sm" id="export-btn">
+                                <i class="bi bi-download"></i> Xuất dữ liệu
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Thời gian</th>
+                                    <th>Biển số</th>
+                                    <th>Độ tin cậy</th>
+                                    <th>Tỉnh/Thành phố</th>
+                                    <th>Loại xe</th>
+                                    <th>Trạng thái</th>
+                                    <th>Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body"></tbody>
+                        </table>
+                    </div>
+                    <nav>
+                        <ul class="pagination justify-content-center" id="pagination"></ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Section -->
+        <div id="analytics-section" class="fade-in" style="display: none;">
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Thống kê theo tỉnh thành</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="province-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="card-title mb-0">Thống kê theo loại xe</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="vehicle-type-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile section -->
+        <div class="card mb-4">
+            <div class="card-footer">
+                <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteAccountModal">
+                    <i class="bi bi-trash"></i> Xóa tài khoản
+                </button>
+            </div>
+        </div>
+
+        <!-- Delete Account Modal -->
+        <div class="modal fade" id="deleteAccountModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Xác nhận xóa tài khoản</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-danger">Cảnh báo: Hành động này không thể hoàn tác!</p>
+                        <p>Bạn có chắc chắn muốn xóa tài khoản? Tất cả dữ liệu của bạn sẽ bị xóa vĩnh viễn.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                        <button type="button" class="btn btn-danger" id="confirmDeleteAccount">Xóa tài khoản</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Initialize services
+        apiService.init();
+        wsClient.connect();
+        wsClient.startPing();
+
+        // WebSocket event handlers
+        wsClient.on('connected', () => {
+            uiUtils.showToast('Kết nối thành công đến máy chủ', 'success');
+        });
+
+        wsClient.on('disconnected', () => {
+            uiUtils.showToast('Mất kết nối đến máy chủ', 'warning');
+        });
+
+        wsClient.on('progress', (progress) => {
+            if (progress.stage === 'detecting') {
+                uiUtils.showLoading('result-container');
+                document.getElementById('result-container').innerHTML = `
+                    <div class="progress mb-3">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             style="width: ${progress.percent}%">
+                            ${progress.percent}%
+                        </div>
+                    </div>
+                    <p class="text-center">${progress.message}</p>
+                `;
+            }
+        });
+
+        wsClient.on('result', (result) => {
+            displayDetectionResult(result);
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            wsClient.disconnect();
+        });
+
+        // Handle tab switching
+        document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetPanel = e.target.getAttribute('data-target');
+                
+                // Update active tab
+                document.querySelectorAll('[data-bs-toggle="tab"]').forEach(t => {
+                    t.classList.remove('active');
+                });
+                e.target.classList.add('active');
+
+                // Show/hide panels
+                document.getElementById('upload-panel').style.display = 
+                    targetPanel === 'upload-panel' ? 'block' : 'none';
+                document.getElementById('webcam-panel').style.display = 
+                    targetPanel === 'webcam-panel' ? 'block' : 'none';
+
+                if (targetPanel === 'webcam-panel') {
+                    startWebcam();
+                } else {
+                    stopWebcam();
+                }
+            });
+        });
+
+        // Webcam handling
+        async function startWebcam() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                const video = document.getElementById('webcam');
+                video.srcObject = stream;
+            } catch (error) {
+                uiUtils.showError('Không thể kết nối camera: ' + error.message);
+            }
+        }
+
+        function stopWebcam() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            if (autoDetectInterval) {
+                clearInterval(autoDetectInterval);
+                autoDetectInterval = null;
+            }
+        }
+
+        // Handle file upload with WebSocket progress
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('image-input');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                uiUtils.showError('Vui lòng chọn ảnh');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                uiUtils.showLoading('result-container');
+                const result = await apiService.detection.uploadImage(formData);
+                displayDetectionResult(result);
+                uiUtils.showToast('Nhận diện thành công!', 'success');
+            } catch (error) {
+                uiUtils.showError('Lỗi khi xử lý ảnh: ' + error.message);
+                uiUtils.showToast('Lỗi khi xử lý ảnh', 'danger');
+            }
+        });
+
+        // Handle webcam capture with WebSocket updates
+        document.getElementById('capture-btn').addEventListener('click', async () => {
+            if (!stream) {
+                uiUtils.showError('Camera chưa được kết nối');
+                return;
+            }
+
+            const video = document.getElementById('webcam');
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+
+            try {
+                uiUtils.showLoading('result-container');
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+                const formData = new FormData();
+                formData.append('image', blob, 'capture.jpg');
+
+                const result = await apiService.detection.uploadImage(formData);
+                displayDetectionResult(result);
+                drawDetectionOverlay(result);
+                uiUtils.showToast('Nhận diện thành công!', 'success');
+            } catch (error) {
+                uiUtils.showError('Lỗi khi xử lý ảnh: ' + error.message);
+                uiUtils.showToast('Lỗi khi xử lý ảnh', 'danger');
+            }
+        });
+
+        // Handle auto-detect toggle
+        document.getElementById('auto-detect').addEventListener('change', (e) => {
+            isAutoDetecting = e.target.checked;
+            if (isAutoDetecting) {
+                autoDetectInterval = setInterval(async () => {
+                    if (!stream) return;
+                    document.getElementById('capture-btn').click();
+                }, 2000); // Detect every 2 seconds
+            } else if (autoDetectInterval) {
+                clearInterval(autoDetectInterval);
+                autoDetectInterval = null;
+            }
+        });
+
+        // Display detection result
+        function displayDetectionResult(result) {
+            const resultContainer = document.getElementById('result-container');
+            resultContainer.innerHTML = `
+                <div class="text-center mb-3">
+                    <img src="${result.imageUrl}" class="img-fluid border rounded">
+                </div>
+                <div class="alert alert-success">
+                    <h5 class="alert-heading">
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        Biển số: ${result.plateNumber}
+                    </h5>
+                    <hr>
+                    <p class="mb-1">
+                        <i class="bi bi-geo-alt-fill me-2"></i>
+                        Tỉnh/Thành phố: ${result.province}
+                    </p>
+                    <p class="mb-1">
+                        <i class="bi bi-truck me-2"></i>
+                        Loại xe: ${result.vehicleType}
+                    </p>
+                    <p class="mb-0">
+                        <i class="bi bi-bar-chart-fill me-2"></i>
+                        Độ tin cậy: ${uiUtils.formatPercent(result.confidence)}
+                    </p>
+                </div>
+            `;
+        }
+
+        // Draw detection overlay on webcam
+        function drawDetectionOverlay(result) {
+            const canvas = document.getElementById('detection-overlay');
+            const ctx = canvas.getContext('2d');
+            const video = document.getElementById('webcam');
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (result.bbox) {
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(
+                    result.bbox.x,
+                    result.bbox.y,
+                    result.bbox.width,
+                    result.bbox.height
+                );
+
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '20px Arial';
+                ctx.fillText(
+                    `${result.plateNumber} (${uiUtils.formatPercent(result.confidence)})`,
+                    result.bbox.x,
+                    result.bbox.y - 10
+                );
+            }
+        }
+
+        // Handle logout
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            apiService.auth.logout()
+                .then(() => {
+                    window.location.href = '/login.html';
+                });
+        });
+
+        // Tab switching
+        document.querySelectorAll('.nav-link').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                const targetId = e.target.id;
+                
+                // Update active tab
+                document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+
+                // Show/hide sections
+                document.querySelectorAll('#detection-section, #history-section, #analytics-section')
+                    .forEach(section => section.style.display = 'none');
+
+                if (targetId === 'detection-tab') {
+                    document.getElementById('detection-section').style.display = 'block';
+                } else if (targetId === 'history-tab') {
+                    document.getElementById('history-section').style.display = 'block';
+                    loadHistory();
+                } else if (targetId === 'analytics-tab') {
+                    document.getElementById('analytics-section').style.display = 'block';
+                    loadAnalytics();
+                }
+            });
+        });
+
+        // Load detection history
+        async function loadHistory(page = 1) {
+            try {
+                const result = await apiService.detection.getHistory({ page, limit: 10 });
+                const tbody = document.getElementById('history-table-body');
+                tbody.innerHTML = '';
+
+                result.records.forEach(record => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${new Date(record.timestamp).toLocaleString()}</td>
+                        <td>${record.plateNumber}</td>
+                        <td>${(record.confidence * 100).toFixed(2)}%</td>
+                        <td>${record.province}</td>
+                        <td>${record.vehicleType}</td>
+                        <td><span class="badge bg-${record.status === 'verified' ? 'success' : 'warning'}">${record.status}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="viewRecord('${record._id}')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                // Update pagination
+                updatePagination(result.currentPage, result.totalPages);
+            } catch (error) {
+                console.error('Error loading history:', error);
+            }
+        }
+
+        // Update pagination controls
+        function updatePagination(currentPage, totalPages) {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+
+            for (let i = 1; i <= totalPages; i++) {
+                const li = document.createElement('li');
+                li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+                li.innerHTML = `
+                    <a class="page-link" href="#" onclick="loadHistory(${i})">${i}</a>
+                `;
+                pagination.appendChild(li);
+            }
+        }
+
+        // Load analytics
+        async function loadAnalytics() {
+            try {
+                const data = await apiService.records.getAnalytics();
+                
+                // Province chart
+                new Chart(document.getElementById('province-chart'), {
+                    type: 'bar',
+                    data: {
+                        labels: data.provinceStats.map(item => item._id),
+                        datasets: [{
+                            label: 'Số lượt phát hiện',
+                            data: data.provinceStats.map(item => item.count),
+                            backgroundColor: 'rgba(54, 162, 235, 0.5)'
+                        }]
+                    }
+                });
+
+                // Vehicle type chart
+                new Chart(document.getElementById('vehicle-type-chart'), {
+                    type: 'pie',
+                    data: {
+                        labels: data.vehicleTypeStats.map(item => item._id),
+                        datasets: [{
+                            data: data.vehicleTypeStats.map(item => item.count),
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 0.5)',
+                                'rgba(54, 162, 235, 0.5)',
+                                'rgba(255, 206, 86, 0.5)',
+                                'rgba(75, 192, 192, 0.5)'
+                            ]
+                        }]
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+            }
+        }
+
+        // Handle record export
+        document.getElementById('export-btn').addEventListener('click', async () => {
+            try {
+                const response = await apiService.records.exportRecords();
+                const blob = new Blob([response], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'detection_records.csv';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Error exporting records:', error);
+                alert('Lỗi khi xuất dữ liệu');
+            }
+        });
+
+        // Handle delete account
+        document.getElementById('confirmDeleteAccount').addEventListener('click', async () => {
+            try {
+                await apiService.user.deleteAccount();
+                window.location.href = '/login.html';
+            } catch (error) {
+                uiUtils.showToast('Lỗi khi xóa tài khoản: ' + error.message, 'danger');
+            }
+        });
+    </script>
+</body>
+</html>
