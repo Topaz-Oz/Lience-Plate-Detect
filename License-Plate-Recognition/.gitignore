@@ -3,18 +3,57 @@ git push origin main
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Distribution / packaging
-dist/
+*.so
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
+.installed.cfg
+*.egg
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Logs
+*.log
+*.log.*
+debug_output.log
+debug_output.txt
+output.txt
+
+# PyTorch model files (they are usually large)
+*.pt
+*.pth
+
+# Training results
+runs/
+training/
+
+# VS Code
+.vscode/
+
+# System
+.DS_Store
+Thumbs.db
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
 # Training artifacts
-runs/
-*.pt
 ultralytics/
 
 # Dataset
@@ -22,18 +61,7 @@ images/
 labels/
 *.cache
 
-# Logs
-*.log
-
-# Environment
-.env
-venv/
-env/
-config.json
-api_keys.txt
-
 # IDE
-.vscode/
 .idea/
 
 yolov5/
