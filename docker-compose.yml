@@ -1,0 +1,181 @@
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-1.0.0}
+    image: lpr-frontend:${BUILD_VERSION:-1.0.0}
+    ports:
+      - "3000:80"
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+    depends_on:
+      backend:
+        condition: service_healthy
+      license-plate-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - lpr-network
+
+  backend:
+    build:
+      context: ./FEFolder
+      dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-1.0.0}
+    image: lpr-backend:${BUILD_VERSION:-1.0.0}
+    ports:
+      - "3001:3000"
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://${MONGODB_USER}:${MONGODB_PASSWORD}@mongodb:27017/lpr?authSource=admin
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGIN=http://localhost:3000
+      - DETECTION_SERVICE_URL=http://license-plate-service:5000
+      - GOOGLE_CLIENT_ID=743121928332-orql3frbgeaeaujfgtlcqm9iurbfniuo.apps.googleusercontent.com
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    volumes:
+      - uploads:/app/uploads
+    networks:
+      - lpr-network
+
+  license-plate-service:
+    build:
+      context: ./License-Plate-Recognition
+      dockerfile: Dockerfile
+      args:
+        BUILD_VERSION: ${BUILD_VERSION:-1.0.0}
+    image: lpr-detection:${BUILD_VERSION:-1.0.0}
+    ports:
+      - "5000:5000"
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=core/lp_image.py
+      - CORS_ORIGINS=http://localhost:3000
+      - MAX_CONTENT_LENGTH=10485760
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
+    volumes:
+      - ./License-Plate-Recognition/models:/app/models:ro
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - lpr-network
+
+  mongodb:
+    image: mongo:latest
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGODB_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGODB_PASSWORD}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - ./logs/mongodb:/var/log/mongodb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    deploy:
+      restart_policy:
+        condition: on-failure
+    networks:
+      - lpr-network
+
+  redis:
+    image: redis:alpine
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./logs/redis:/var/log/redis
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    deploy:
+      restart_policy:
+        condition: on-failure
+    networks:
+      - lpr-network
+
+  loadbalancer:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+    networks:
+      - lpr-network
+    deploy:
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  mongodb_data:
+  redis_data:
+  uploads:
+
+networks:
+  lpr-network:
+    driver: bridge

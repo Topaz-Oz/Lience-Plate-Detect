@@ -1,123 +1,155 @@
-const { OAuth2Client } = require('google-auth-library');
+const User = require('../models/User');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const User = require('../models/user');
+const logger = require('../utils/logger');
+const { OAuth2Client } = require('google-auth-library');
 
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const authController = {
-    // Đăng nhập với Google
-    googleLogin: async (req, res) => {
+class AuthController {
+    async register(req, res) {
         try {
-            const { token } = req.body;
-            const ticket = await client.verifyIdToken({
-                idToken: token,
-                audience: process.env.GOOGLE_CLIENT_ID
-            });
-
-            const { email, name, picture } = ticket.getPayload();
+            const { username, password } = req.body;
+            const user = new User({ username, password });
+            await user.save();
             
+            const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+                expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+            });
+            
+            res.json({ token, user: { id: user._id, username: user.username } });
+        } catch (error) {
+            logger.error('Registration error:', error);
+            res.status(400).json({ error: error.message });
+        }
+    }
+
+    async login(req, res) {
+        try {
+            const { username, password } = req.body;
+            const user = await User.findOne({ username });
+            
+            if (!user || !await user.comparePassword(password)) {
+                return res.status(401).json({ error: 'Invalid credentials' });
+            }
+            
+            const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+                expiresIn: process.env.JWT_EXPIRES_IN || '7d'
+            });
+            
+            res.json({ token, user: { id: user._id, username: user.username } });
+        } catch (error) {
+            logger.error('Login error:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    async logout(req, res) {
+        // JWT-based logout is handled client-side
+        res.json({ message: 'Logged out successfully' });
+    }
+
+    async getCurrentUser(req, res) {
+        try {
+            if (!req.user) {
+                return res.status(401).json({ error: 'Not authenticated' });
+            }
+            const user = await User.findById(req.user._id).select('-password');
+            res.json(user);
+        } catch (error) {
+            logger.error('Get current user error:', error);
+            res.status(500).json({ error: error.message });
+        }
+    }
+
+    async loginWithGoogle(req, res) {
+        try {
+            const { credential } = req.body;
+            
+            if (!credential) {
+                logger.error('Google login error: No credential provided');
+                return res.status(400).json({ error: 'No Google credential provided' });
+            }
+
+            // Verify Google token
+            const ticket = await googleClient.verifyIdToken({
+                idToken: credential,
+                audience: process.env.GOOGLE_CLIENT_ID
+            }).catch(error => {
+                logger.error('Google token verification error:', error);
+                throw new Error('Invalid Google token');
+            });
+            
+            const payload = ticket.getPayload();
+            if (!payload) {
+                throw new Error('Invalid Google token payload');
+            }
+
+            const { email, name, picture, sub: googleId } = payload;
+
+            // Find or create user
             let user = await User.findOne({ email });
             
             if (!user) {
-                user = new User({ email, name, picture });
-                await user.save();
+                // Create new user
+                const username = email.split('@')[0];
+                try {
+                    user = new User({
+                        username,
+                        email,
+                        name,
+                        picture,
+                        googleId,
+                        isGoogleAccount: true
+                    });
+                    await user.save();
+                    logger.info('New Google user created:', { email });
+                } catch (err) {
+                    logger.error('Error creating new Google user:', err);
+                    throw new Error('Failed to create user account');
+                }
+            } else {
+                // Update existing user
+                try {
+                    user.name = name;
+                    user.picture = picture;
+                    user.googleId = googleId;
+                    user.isGoogleAccount = true;
+                    await user.save();
+                    logger.info('Updated Google user:', { email });
+                } catch (err) {
+                    logger.error('Error updating Google user:', err);
+                    throw new Error('Failed to update user account');
+                }
             }
 
-            const authToken = jwt.sign({ _id: user._id }, process.env.JWT_SECRET);
-            res.send({ user, token: authToken });
-        } catch (error) {
-            res.status(400).send({ error: error.message });
-        }
-    },
-
-    // Đăng xuất
-    logout: async (req, res) => {
-        try {
-            req.user.lastLogin = new Date();
-            await req.user.save();
-            res.send({ message: 'Logged out successfully' });
-        } catch (error) {
-            res.status(500).send({ error: error.message });
-        }
-    },
-
-    // Kiểm tra trạng thái authentication
-    checkAuth: async (req, res) => {
-        try {
-            res.send({ user: req.user });
-        } catch (error) {
-            res.status(401).send({ error: 'Please authenticate.' });
-        }
-    },
-
-    // Gửi email đặt lại mật khẩu
-    requestPasswordReset: async (req, res) => {
-        try {
-            const { email } = req.body;
-            const user = await User.findOne({ email });
-            
-            if (!user) {
-                return res.status(404).send({ error: 'User not found' });
-            }
-
-            const resetToken = crypto.randomBytes(32).toString('hex');
-            user.resetPasswordToken = resetToken;
-            user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
-            await user.save();
-
-            // TODO: Implement email sending logic here
-            // For now, just return the token
-            res.send({ message: 'Password reset email sent', resetToken });
-        } catch (error) {
-            res.status(500).send({ error: error.message });
-        }
-    },
-
-    // Xác thực email
-    verifyEmail: async (req, res) => {
-        try {
-            const { token } = req.params;
-            const user = await User.findOne({
-                emailVerificationToken: token,
-                emailVerificationExpires: { $gt: Date.now() }
+            // Generate JWT token
+            const token = jwt.sign({ 
+                userId: user._id,
+                email: user.email
+            }, process.env.JWT_SECRET, {
+                expiresIn: process.env.JWT_EXPIRES_IN || '7d'
             });
 
-            if (!user) {
-                return res.status(400).send({ error: 'Invalid or expired verification token' });
-            }
+            res.json({
+                token,
+                user: {
+                    id: user._id,
+                    username: user.username,
+                    name: user.name,
+                    email: user.email,
+                    picture: user.picture
+                }
+            });
 
-            user.emailVerified = true;
-            user.emailVerificationToken = undefined;
-            user.emailVerificationExpires = undefined;
-            await user.save();
-
-            res.send({ message: 'Email verified successfully' });
         } catch (error) {
-            res.status(500).send({ error: error.message });
-        }
-    },
-
-    // Quản lý phiên đăng nhập
-    listSessions: async (req, res) => {
-        try {
-            const user = await User.findById(req.user._id).select('+sessions');
-            res.send(user.sessions || []);
-        } catch (error) {
-            res.status(500).send({ error: error.message });
-        }
-    },
-
-    // Đăng xuất khỏi tất cả các thiết bị
-    logoutAllSessions: async (req, res) => {
-        try {
-            req.user.sessions = [];
-            await req.user.save();
-            res.send({ message: 'Logged out from all sessions' });
-        } catch (error) {
-            res.status(500).send({ error: error.message });
+            logger.error('Google login error:', error);
+            res.status(401).json({ 
+                error: 'Google authentication failed',
+                message: error.message,
+                details: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
         }
     }
-};
+}
 
-module.exports = authController;
+module.exports = new AuthController();

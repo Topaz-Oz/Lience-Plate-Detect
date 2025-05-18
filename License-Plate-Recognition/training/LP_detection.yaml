@@ -1,7 +1,0 @@
-path: ..  # Dataset root directory
-train: images/train  # Train images relative path
-val: images/val     # Validation images relative path
-
-# Classes
-nc: 1  # Number of classes
-names: ['license_plate']  # Class names
