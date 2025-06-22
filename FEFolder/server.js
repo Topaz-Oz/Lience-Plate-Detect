@@ -10,6 +10,20 @@ const { errorHandler } = require('./middleware/error');
 const { apiLimiter, authLimiter } = require('./middleware/rateLimit');
 const WebSocketService = require('./services/websocket');
 const fileCleanup = require('./services/fileCleanup');
+const RedisManager = require('./services/redis');
+
+const redisManager = new RedisManager();
+let redisClient;
+
+// Initialize Redis
+(async () => {
+    try {
+        redisClient = await redisManager.connect();
+        logger.info('Redis initialized successfully');
+    } catch (error) {
+        logger.error('Failed to initialize Redis:', error);
+    }
+})();
 
 // Routes
 const userRoutes = require('./routes/userRoutes');
@@ -60,10 +74,14 @@ app.use('/uploads', express.static(uploadsDir));
 app.get('/health', async (req, res) => {
     try {
         // Check database connection
-        await mongoose.connection.db.admin().ping();
+        if (mongoose.connection.readyState !== 1) {
+            throw new Error('Database not connected');
+        }
         
-        // Check Redis connection
-        await redisClient.ping();
+        // Check Redis connection if available
+        if (redisClient && redisClient.isOpen) {
+            await redisClient.ping();
+        }
         
         res.status(200).json({ status: 'healthy' });
     } catch (error) {
@@ -107,16 +125,26 @@ const connectDB = async (retries = 5) => {
     }
 };
 
-// Khởi động server
+// Start server
 const startServer = async () => {
     try {
         await connectDB();
 
-        const server = app.listen(process.env.PORT || 3000, () => {
-            logger.info(`Server is running on port ${process.env.PORT || 3000}`);
+        const PORT = 3000; // Use fixed port 3000 as specified in docker-compose
+        const server = app.listen(PORT, '0.0.0.0', () => {
+            logger.info(`Server is running on port ${PORT}`);
         });
 
-        // Khởi tạo WebSocket service
+        server.on('error', (error) => {
+            if (error.code === 'EADDRINUSE') {
+                logger.error(`Port ${PORT} is already in use`);
+            } else {
+                logger.error('Server error:', error);
+            }
+            process.exit(1);
+        });
+
+        // Initialize WebSocket service
         const wsService = new WebSocketService();
         wsService.initialize(server);
         app.set('wsService', wsService);

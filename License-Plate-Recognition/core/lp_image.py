@@ -158,10 +158,6 @@ class LicensePlateDetector:
             logging.error(f"Error in detection: {str(e)}")
             return None, None
 
-@app.route('/health')
-def health_check():
-    return jsonify({'status': 'healthy'})
-
 def main():
     if len(sys.argv) != 2:
         print(json.dumps({'error': 'Image path argument required'}))

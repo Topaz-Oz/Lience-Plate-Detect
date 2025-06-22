@@ -58,4 +58,4 @@ class RedisManager {
     }
 }
 
-module.exports = new RedisManager();
+module.exports = RedisManager;

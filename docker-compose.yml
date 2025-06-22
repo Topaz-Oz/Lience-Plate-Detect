@@ -40,7 +40,7 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-1.0.0}
     image: lpr-backend:${BUILD_VERSION:-1.0.0}
     ports:
-      - "3001:3000"
+      - "3040-3041:3000"
     deploy:
       replicas: 2
       update_config:
@@ -82,7 +82,7 @@ services:
         BUILD_VERSION: ${BUILD_VERSION:-1.0.0}
     image: lpr-detection:${BUILD_VERSION:-1.0.0}
     ports:
-      - "5000:5000"
+      - "5050-5051:5000"
     deploy:
       replicas: 2
       update_config:
